@@ -215,6 +215,44 @@ class EndToEnd(unittest.TestCase):
         self.wait(lambda: any(o["text"].startswith("Usage: !repeat <number>") for o in self.outbox()))
         self.assertNotIn("on MediumFast", " ".join(self.tg.texts()))
 
+    def test_admin_channel(self):
+        self.start(FAKE_MESH_CHANNELS=",Group,Admin", BRIDGE_ADMIN_CHANNEL="Admin")
+        self.ready()
+        self.wait(lambda: "Admin channel: 'Admin' (index 2)" in self.logtext())
+        self.mesh_rx("status", frm=ADMIN, ch=2)
+        self.wait(lambda: any(o["ch"] == 2 and o["dest"] is None and o["text"].startswith("Status: bridge on")
+                              for o in self.outbox()))
+        self.mesh_rx("status", frm=ALICE, ch=2)                         # not in BRIDGE_ADMINS
+        self.wait(lambda: "[ADMIN-CH !22222222] ignored" in self.logtext())
+        self.mesh_rx("!bridge off", frm=ADMIN, ch=2)
+        self.wait(lambda: any(o["ch"] == 2 and o["text"].startswith("Bridge: off") for o in self.outbox()))
+        self.mesh_rx("random chatter", frm=ADMIN, ch=2)                 # unknown: no answer, never forwarded
+        time.sleep(0.6)
+        self.assertEqual(sum(o["ch"] == 2 for o in self.outbox()), 2)
+        self.assertNotIn("random chatter", " ".join(self.tg.texts()))
+        self.assertFalse(json.loads((self.tmp / "state.json").read_text())["bridge"])
+        self.mesh_rx("hello", ch=1)                                     # bridged channel still handled (bridge off)
+        self.wait(lambda: "bridge off, not forwarded" in self.logtext())
+
+    def test_admin_channel_without_admin_ids_is_open_to_its_members(self):
+        self.start(lang="it", FAKE_MESH_CHANNELS=",Group,Admin", BRIDGE_ADMIN_CHANNEL="admin", BRIDGE_ADMINS="")
+        self.ready()
+        self.wait(lambda: "comandi accettati da: qualsiasi nodo sul canale" in self.logtext())
+        self.mesh_rx("stato", frm=ALICE, ch=2)
+        self.wait(lambda: any(o["ch"] == 2 and o["text"].startswith("Stato: bridge on") for o in self.outbox()))
+
+    def test_admin_channel_same_as_bridged_exits_78(self):
+        self.start(BRIDGE_ADMIN_CHANNEL="group")
+        self.assertEqual(self.proc.wait(8), bridge.EX_CONFIG)
+        self.assertIn("must be different from MESH_CHANNEL", self.logtext())
+
+    def test_admin_channel_missing_is_not_fatal(self):
+        self.start(BRIDGE_ADMIN_CHANNEL="Nope")
+        self.ready()
+        self.wait(lambda: "Admin channel 'Nope' not found" in self.logtext())
+        self.mesh_rx("still bridging")
+        self.wait(lambda: "Alice: still bridging" in self.tg.texts())
+
     def test_privacy_warning(self):
         self.tg.bot_status = "member"                       # not admin, privacy on
         self.start()

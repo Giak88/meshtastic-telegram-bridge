@@ -47,7 +47,7 @@ cd mesh-telegram-bridge
 ./setup.sh
 ```
 
-Al primo avvio chiede la lingua, poi guida in sei passi:
+Al primo avvio chiede la lingua, poi guida in sette passi:
 
 1. **Collegamento al nodo**: scegli la porta USB (prima i nomi stabili `/dev/serial/by-id/...`) o scrivi l'IP del nodo.
 2. **Canale mesh**: l'elenco dei canali viene letto dal nodo; scegli quello da collegare.
@@ -58,7 +58,11 @@ Al primo avvio chiede la lingua, poi guida in sei passi:
    disattiva la privacy (`/setprivacy` → Disable), altrimenti non può leggere il gruppo. La configurazione lo controlla e ti avvisa; il bridge scrive lo stesso avviso nel log all'avvio.
 4. **Gruppo Telegram**: scrivi qualcosa nel gruppo e il bridge ne rileva l'id.
 5. **Amministratori** (facoltativo): gli ID dei nodi che possono controllare il bridge via DM.
-6. **Prefisso dei comandi**: `!` di default (`!ripeti 3`); va bene anche una parola (`BOT` → `BOT ripeti 3`).
+6. **Canale di amministrazione** (facoltativo): un canale privato per gli stessi comandi admin. Un canale
+   si raggiunge più facilmente di un DM (crittografia più leggera, nessuno scambio di chiavi). La
+   configurazione può usare un canale già presente sul nodo, oppure aggiungerne uno per te: con una nuova
+   chiave casuale o con la chiave di un canale che usi già altrove. Quello che vi si scrive non va a Telegram.
+7. **Prefisso dei comandi**: `!` di default (`!ripeti 3`); va bene anche una parola (`BOT` → `BOT ripeti 3`).
 
 Infine propone di installare il servizio: da quel momento il bridge parte a ogni avvio.
 
@@ -83,12 +87,20 @@ Le stesse azioni si possono lanciare direttamente: `./setup.sh config|install|un
 |---|---|---|
 | Canale collegato | `!ripeti <n>` (`!repeat <n>`) | Ultimi *n* messaggi di Telegram e del canale, esclusi i tuoi |
 | Gruppo Telegram | `/ripeti <n>` o `!ripeti <n>` | Ultimi *n* messaggi del canale |
-| DM al nodo del bridge (admin) | `stato` | Stato del bridge, tempo di attività, contatori |
+| DM al nodo del bridge, o sul canale admin (admin) | `stato` | Stato del bridge, tempo di attività, contatori |
 | | `bridge on` / `bridge off` | Riprende o sospende l'inoltro (i messaggi restano disponibili per `ripeti`) |
 | | `ban <id>` / `unban <id>` | Ignora un nodo sul canale collegato |
 
 Di default i comandi admin sono accettati solo nei DM cifrati PKI (Meshtastic 2.5+), così
 nessuno può spacciarsi per un admin falsificando l'ID del nodo.
+
+**Canale admin** (`BRIDGE_ADMIN_CHANNEL`): gli stessi comandi funzionano anche su un canale privato
+dedicato, più facile da raggiungere di un DM. I messaggi su un canale non sono firmati dal singolo nodo,
+quindi **la chiave del canale è la password**: chi la possiede potrebbe falsificare l'ID di un admin.
+Usa una chiave casuale (la configurazione la genera) e condividila solo con gli admin. Se `BRIDGE_ADMINS`
+è impostato vengono ascoltati solo quei nodi; se è vuoto, chiunque sia sul canale. Le risposte vanno sul
+canale, i messaggi sconosciuti non ricevono risposta e nulla arriva a Telegram. Non usare mai il canale
+primario pubblico.
 
 ## Configurazione
 

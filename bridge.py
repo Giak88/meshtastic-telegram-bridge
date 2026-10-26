@@ -67,6 +67,7 @@ class Config:
         self.admins = {x.strip().lower() if x.strip().startswith("!") else "!" + x.strip().lower()
                        for x in e("BRIDGE_ADMINS", "").split(",") if x.strip()}
         self.admin_pki = _bool(e("BRIDGE_ADMIN_PKI_ONLY", "1"))
+        self.admin_channel = e("BRIDGE_ADMIN_CHANNEL", "").strip()     # optional private channel for admin commands
         self.history_n = max(1, int(e("BRIDGE_HISTORY", "20")))       # messages kept per side
         self.repeat_pause = int(e("BRIDGE_REPEAT_PAUSE", "30"))       # s between two repeats per side
         self.max_parts = max(1, int(e("BRIDGE_MAX_PARTS", "4")))      # max mesh messages per TG message
@@ -240,6 +241,7 @@ iface = None
 MY_NUM = None
 CHANNELS = {}            # index -> name
 BRIDGE_IDX = None
+ADMIN_IDX = None
 STARTED = time.time()
 jobs = queue.Queue()     # everything that transmits on the mesh runs here, one at a time
 tg_out = queue.Queue()   # messages for Telegram, sent by their own thread (never blocks the radio)
@@ -570,6 +572,15 @@ def handle_packet(pkt):
         else:
             log.info(t("log_dm_ignored", uid=uid))
         return
+    if ADMIN_IDX is not None and ch == ADMIN_IDX:                 # admin channel: commands only, never forwarded
+        if cfg.admins and uid not in cfg.admins:
+            return log.info(t("log_admin_ch_ignored", uid=uid))
+        log.info(f"[ADMIN-CH {uid}] {text}")
+        reply = handle_admin(uid, text)
+        if reply:                                                # unknown chatter gets no answer
+            for p in paginate(reply):
+                mesh_send(p, ch=ADMIN_IDX)
+        return
     if ch != BRIDGE_IDX or uid in state.ban:
         return
     n = parse_repeat(text)
@@ -637,7 +648,7 @@ def open_node():
 
 
 def main():
-    global iface, MY_NUM, CHANNELS, BRIDGE_IDX
+    global iface, MY_NUM, CHANNELS, BRIDGE_IDX, ADMIN_IDX
     load_env_file(os.environ.get("BRIDGE_CONFIG", BASE / "config.env"))
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
     setup(Config())
@@ -660,6 +671,17 @@ def main():
                state="on" if state.bridge else "off"))
     if cfg.admins:
         log.info(t("log_admins", ids=", ".join(sorted(cfg.admins)), pki="on" if cfg.admin_pki else "off"))
+    if cfg.admin_channel:
+        if cfg.admin_channel.lower() == cfg.mesh_channel.lower():
+            log.error(t("log_admin_same", ch=cfg.mesh_channel))
+            iface.close()
+            sys.exit(EX_CONFIG)
+        ADMIN_IDX = next((k for k, v in CHANNELS.items() if v.lower() == cfg.admin_channel.lower()), None)
+        if ADMIN_IDX is None:
+            log.warning(t("log_no_admin_channel", ch=cfg.admin_channel, avail=", ".join(CHANNELS.values())))
+        else:
+            log.info(t("log_admin_channel", ch=CHANNELS[ADMIN_IDX], idx=ADMIN_IDX,
+                       who=", ".join(sorted(cfg.admins)) or t("who_any")))
     pub.subscribe(on_receive, "meshtastic.receive.text")
     pub.subscribe(on_lost, "meshtastic.connection.lost")
     for target in (worker, tg_sender, tg_poll):

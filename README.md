@@ -46,7 +46,7 @@ cd mesh-telegram-bridge
 ./setup.sh
 ```
 
-The first run asks for the language, then guides you through six steps:
+The first run asks for the language, then guides you through seven steps:
 
 1. **Node connection**: pick the USB port (stable `/dev/serial/by-id/...` names are shown first) or type the node's IP.
 2. **Mesh channel**: the channel list is read from the node; choose the one to bridge.
@@ -57,7 +57,11 @@ The first run asks for the language, then guides you through six steps:
    its privacy mode (`/setprivacy` → Disable), otherwise it cannot read the group. The setup checks this and warns you; the bridge logs the same warning at start.
 4. **Telegram group**: write anything in the group and the bridge detects its id.
 5. **Administrators** (optional): node ids allowed to control the bridge by DM.
-6. **Command prefix**: `!` by default (`!repeat 3`); any word works (`BOT` → `BOT repeat 3`).
+6. **Admin channel** (optional): a private channel for the same admin commands. A channel is easier to
+   reach than a DM (lighter encryption, no key exchange). The setup can use a channel already on the
+   node, or add one for you: with a new random key, or with the key of a channel you already use elsewhere.
+   Nothing written on it is forwarded to Telegram.
+7. **Command prefix**: `!` by default (`!repeat 3`); any word works (`BOT` → `BOT repeat 3`).
 
 Then it offers to install the service. From now on the bridge starts at every boot.
 
@@ -82,12 +86,19 @@ The same actions are available directly: `./setup.sh config|install|uninstall|st
 |---|---|---|
 | Bridged channel | `!repeat <n>` (`!ripeti <n>`) | Last *n* messages from Telegram and the channel, except yours |
 | Telegram group | `/repeat <n>` or `!repeat <n>` | Last *n* messages from the channel |
-| DM to the bridge node (admin) | `status` | Bridge state, uptime, counters |
+| DM to the bridge node, or on the admin channel (admin) | `status` | Bridge state, uptime, counters |
 | | `bridge on` / `bridge off` | Stop or resume forwarding (messages are still kept for `repeat`) |
 | | `ban <id>` / `unban <id>` | Ignore a node on the bridged channel |
 
 By default admin commands are accepted only in PKI-encrypted DMs (Meshtastic 2.5+), so nobody
 can impersonate an admin by faking a node id.
+
+**Admin channel** (`BRIDGE_ADMIN_CHANNEL`): the same commands also work on a dedicated private channel,
+which is easier to reach than a DM. Messages on a channel are not signed per node, so **the channel key is
+the password**: anyone holding it could forge an admin's node id. Use a random key (the setup generates
+one) and share it only with the admins. If `BRIDGE_ADMINS` is set, only those nodes are obeyed; if it is
+empty, anyone on the channel is. Replies go to the channel, unknown messages get no answer, and nothing
+on it reaches Telegram. Never use your public primary channel for this.
 
 ## Configuration
 

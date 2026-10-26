@@ -14,6 +14,7 @@ import os
 import re
 import sys
 import time
+import base64
 import getpass
 import shutil
 import tempfile
@@ -36,7 +37,7 @@ SUDO = (os.environ["MTB_SUDO"].split() if "MTB_SUDO" in os.environ
 DEFAULT_SERVICE = "mesh-telegram-bridge"
 
 MAIN_KEYS = ["BRIDGE_LANG", "MESH_PORT", "MESH_HOST", "MESH_CHANNEL", "TG_TOKEN", "TG_CHAT_ID",
-             "BRIDGE_PREFIX", "BRIDGE_ADMINS", "BRIDGE_ADMIN_PKI_ONLY", "BRIDGE_SERVICE"]
+             "BRIDGE_PREFIX", "BRIDGE_ADMINS", "BRIDGE_ADMIN_PKI_ONLY", "BRIDGE_ADMIN_CHANNEL", "BRIDGE_SERVICE"]
 ADVANCED = {"BRIDGE_HISTORY": "20", "BRIDGE_REPEAT_PAUSE": "30", "BRIDGE_MAX_PARTS": "4",
             "MESH_TX_INTERVAL": "1.5", "TG_MAX_AGE": "3600"}
 
@@ -55,12 +56,13 @@ W = {
         "yn": "[Y/n]",
         "ny": "[y/N]",
         "press_enter": "Press Enter to continue...",
-        "step": "\n--- Step {n}/6: {what} ---",
+        "step": "\n--- Step {n}/{total}: {what} ---",
         "s_conn": "connection to the node",
         "s_chan": "mesh channel",
         "s_token": "Telegram bot",
         "s_chat": "Telegram group",
         "s_admin": "administrators",
+        "s_adminch": "admin channel (optional)",
         "s_prefix": "command prefix",
         "conn_how": "How is the node connected?\n  1) USB cable (recommended)\n  2) Network (Wi-Fi/Ethernet, TCP 4403)\nChoice [1]: ",
         "ports_found": "Serial devices found (stable names, they do not change on reconnect):",
@@ -133,6 +135,37 @@ W = {
         "not_installed": "The service {s} is not installed.",
         "restart_ask": "Restart the service to apply the change?",
         "lang_set": "Language: {l}.",
+        "adminch_help": ("Admin commands (status, bridge on|off, ban, unban) can always be sent by direct message to the bridge node.\n"
+                         "You can also use a dedicated private channel: a channel is easier to reach than a DM (lighter\n"
+                         "encryption, no key exchange needed). Its key works as the password, so use a random one and share\n"
+                         "it only with the admins. Nothing written on it is forwarded to Telegram."),
+        "adminch_cur": "Current admin channel: {c}",
+        "adminch_menu": ("  1) No admin channel (DM only)\n  2) Use a channel that is already on the node\n"
+                         "  3) Add a channel to the node (a new one, or one you already use elsewhere)\nChoice [{d}]: "),
+        "adminch_keep": "keep",
+        "adminch_list": "Channels you can use (the primary channel and the bridged one are excluded):",
+        "adminch_pick": "Number of the admin channel, or its name: ",
+        "adminch_none_on_node": "No other channel found on the node.",
+        "adminch_name": "Name of the admin channel [{d}]: ",
+        "adminch_same": "The admin channel must be different from the bridged channel.",
+        "adminch_newname": "Name of the channel to add, max 11 characters [{d}]: ",
+        "adminch_name_bad": "Invalid name: 1 to 11 characters, no leading/trailing spaces, different from the bridged channel.",
+        "adminch_key": ("Key: press Enter to generate a new random key,\nor paste the key of a channel you already use "
+                        "(base64, 16 or 32 bytes): "),
+        "adminch_key_bad": "Not a valid key: it must be base64 and decode to 16 or 32 bytes.",
+        "adminch_confirm": ("This changes the node's configuration: the channel '{n}' will be written into its first free "
+                            "slot. Continue?"),
+        "adminch_noslot": "The node has no free channel slot (it holds 8 channels).",
+        "adminch_write_fail": "Could not write the channel to the node: {err}",
+        "adminch_exists": "A channel named '{n}' is already on the node (slot {i}): I will use it and leave its key untouched.",
+        "adminch_manual": ("To add it by hand, with the bridge service stopped:\n  meshtastic {c} --ch-add {n}\n"
+                           "  meshtastic {c} --ch-index <index of the new channel, see --info> --ch-set psk base64:{k}"),
+        "adminch_anyway": "Use this name anyway (once you have added the channel by hand)?",
+        "adminch_verify_fail": "I wrote the channel but could not find it on the node afterwards with the same key.",
+        "adminch_done": "Channel '{n}' added to the node, slot {i}.",
+        "adminch_key_show": ("\nNow add the same channel on your phone/node: in the Meshtastic app, Settings -> Channels ->\n"
+                             "add a channel named '{n}', role Secondary, with this key (base64):\n\n    {k}\n\n"
+                             "Keep it secret: it is the password of the admin commands."),
     },
     "it": {
         "title": "Bridge Meshtastic <-> Telegram - configurazione",
@@ -147,12 +180,13 @@ W = {
         "yn": "[S/n]",
         "ny": "[s/N]",
         "press_enter": "Premi Invio per continuare...",
-        "step": "\n--- Passo {n}/6: {what} ---",
+        "step": "\n--- Passo {n}/{total}: {what} ---",
         "s_conn": "collegamento al nodo",
         "s_chan": "canale mesh",
         "s_token": "bot Telegram",
         "s_chat": "gruppo Telegram",
         "s_admin": "amministratori",
+        "s_adminch": "canale di amministrazione (facoltativo)",
         "s_prefix": "prefisso dei comandi",
         "conn_how": "Come è collegato il nodo?\n  1) Cavo USB (consigliato)\n  2) Rete (Wi-Fi/Ethernet, TCP 4403)\nScelta [1]: ",
         "ports_found": "Dispositivi seriali trovati (nomi stabili, non cambiano se ricolleghi):",
@@ -225,6 +259,37 @@ W = {
         "not_installed": "Il servizio {s} non è installato.",
         "restart_ask": "Riavvio il servizio per applicare la modifica?",
         "lang_set": "Lingua: {l}.",
+        "adminch_help": ("I comandi admin (stato, bridge on|off, ban, unban) si possono sempre inviare con un messaggio diretto al nodo.\n"
+                         "Puoi usare anche un canale privato dedicato: un canale si raggiunge più facilmente di un DM\n"
+                         "(crittografia più leggera, nessuno scambio di chiavi). La sua chiave è la password: usane una\n"
+                         "casuale e condividila solo con gli admin. Quello che vi si scrive non viene inoltrato a Telegram."),
+        "adminch_cur": "Canale admin attuale: {c}",
+        "adminch_menu": ("  1) Nessun canale admin (solo DM)\n  2) Usa un canale già presente sul nodo\n"
+                         "  3) Aggiungi un canale al nodo (nuovo, oppure uno che usi già altrove)\nScelta [{d}]: "),
+        "adminch_keep": "mantieni",
+        "adminch_list": "Canali utilizzabili (esclusi il canale primario e quello del ponte):",
+        "adminch_pick": "Numero del canale admin, o il suo nome: ",
+        "adminch_none_on_node": "Nessun altro canale trovato sul nodo.",
+        "adminch_name": "Nome del canale admin [{d}]: ",
+        "adminch_same": "Il canale admin deve essere diverso da quello del ponte.",
+        "adminch_newname": "Nome del canale da aggiungere, max 11 caratteri [{d}]: ",
+        "adminch_name_bad": "Nome non valido: da 1 a 11 caratteri, senza spazi ai bordi, diverso dal canale del ponte.",
+        "adminch_key": ("Chiave: premi Invio per generarne una nuova casuale,\noppure incolla la chiave di un canale che usi già "
+                        "(base64, 16 o 32 byte): "),
+        "adminch_key_bad": "Chiave non valida: deve essere base64 e corrispondere a 16 o 32 byte.",
+        "adminch_confirm": ("Questo modifica la configurazione del nodo: il canale '{n}' verrà scritto nel primo slot libero. "
+                            "Continuo?"),
+        "adminch_noslot": "Il nodo non ha slot liberi per i canali (ne contiene 8).",
+        "adminch_write_fail": "Impossibile scrivere il canale sul nodo: {err}",
+        "adminch_exists": "Sul nodo c'è già un canale '{n}' (slot {i}): lo uso e non tocco la sua chiave.",
+        "adminch_manual": ("Per aggiungerlo a mano, con il servizio del bridge fermo:\n  meshtastic {c} --ch-add {n}\n"
+                           "  meshtastic {c} --ch-index <indice del nuovo canale, vedi --info> --ch-set psk base64:{k}"),
+        "adminch_anyway": "Uso comunque questo nome (dopo aver aggiunto il canale a mano)?",
+        "adminch_verify_fail": "Ho scritto il canale ma poi non l'ho ritrovato sul nodo con la stessa chiave.",
+        "adminch_done": "Canale '{n}' aggiunto al nodo, slot {i}.",
+        "adminch_key_show": ("\nOra aggiungi lo stesso canale sul tuo telefono/nodo: nell'app Meshtastic, Impostazioni -> Canali ->\n"
+                             "aggiungi un canale di nome '{n}', ruolo Secondario, con questa chiave (base64):\n\n    {k}\n\n"
+                             "Tienila segreta: è la password dei comandi admin."),
     },
 }
 
@@ -366,12 +431,7 @@ def step_connection(d):
 def read_node_channels(d):
     print(w("chan_reading"))
     try:
-        if d.get("MESH_HOST"):
-            import meshtastic.tcp_interface
-            node = meshtastic.tcp_interface.TCPInterface(hostname=d["MESH_HOST"])
-        else:
-            import meshtastic.serial_interface
-            node = meshtastic.serial_interface.SerialInterface(devPath=d.get("MESH_PORT") or None)
+        node = open_node(d)
         try:
             return bridge.read_channels(node)
         finally:
@@ -512,6 +572,164 @@ def step_admin(d):
         d.setdefault("BRIDGE_ADMIN_PKI_ONLY", "1")
 
 
+class NoSlot(Exception):
+    pass
+
+
+class AlreadyThere(Exception):
+    def __init__(self, index):
+        super().__init__(index)
+        self.index = index
+
+
+def open_node(d):
+    if d.get("MESH_HOST"):
+        import meshtastic.tcp_interface
+        return meshtastic.tcp_interface.TCPInterface(hostname=d["MESH_HOST"])
+    import meshtastic.serial_interface
+    return meshtastic.serial_interface.SerialInterface(devPath=d.get("MESH_PORT") or None)
+
+
+def parse_psk(v):
+    """Raw key from base64 text (16 or 32 bytes), or None."""
+    import binascii
+    v = v.strip()
+    if v.lower().startswith("base64:"):
+        v = v[7:]
+    try:
+        raw = base64.b64decode(v, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    return raw if len(raw) in (16, 32) else None
+
+
+def add_channel(d, name, psk):
+    """Write a secondary channel into the first free slot of the node; returns the slot index."""
+    from meshtastic.protobuf import channel_pb2
+    off = channel_pb2.Channel.Role.DISABLED
+    node = open_node(d)
+    try:
+        chans = node.localNode.channels
+        for c in chans:
+            if c.role != off and c.settings.name.lower() == name.lower():
+                raise AlreadyThere(c.index)
+        free = next((c.index for c in chans if c.index > 0 and c.role == off), None)
+        if free is None:
+            raise NoSlot()
+        ch = chans[free]
+        ch.role = channel_pb2.Channel.Role.SECONDARY
+        ch.settings.name = name
+        ch.settings.psk = psk
+        node.localNode.writeChannel(free)
+        time.sleep(float(os.environ.get("MTB_WRITE_WAIT", "3")))
+    finally:
+        node.close()
+    return free
+
+
+def channel_on_node(d, name, psk, tries=8):
+    """Reopen the node (it may be restarting) and check that the channel is there with the same key."""
+    from meshtastic.protobuf import channel_pb2
+    off = channel_pb2.Channel.Role.DISABLED
+    for _ in range(tries):
+        try:
+            node = open_node(d)
+            try:
+                return any(c.role != off and c.settings.name == name and bytes(c.settings.psk) == psk
+                           for c in node.localNode.channels)
+            finally:
+                node.close()
+        except Exception:
+            time.sleep(float(os.environ.get("MTB_WRITE_WAIT", "3")))
+    return False
+
+
+def conn_args(d):
+    return f"--host {d['MESH_HOST']}" if d.get("MESH_HOST") else f"--port {d.get('MESH_PORT', '')}"
+
+
+def pick_admin_channel(d):
+    chans = read_node_channels(d)
+    bridged = d.get("MESH_CHANNEL", "").lower()
+    cands = {i: n for i, n in (chans or {}).items() if i != 0 and n.lower() != bridged}
+    cur = d.get("BRIDGE_ADMIN_CHANNEL", "")
+    if cands:
+        print(w("adminch_list"))
+        for i, n in sorted(cands.items()):
+            print(f"  {i}) {n}")
+        v = ask(w("adminch_pick"))
+        name = cands[int(v)] if v.isdigit() and int(v) in cands else (v or cur)
+    else:
+        if chans is not None:
+            print(w("adminch_none_on_node"))
+        name = ask_default("adminch_name", cur)
+    if name.lower() == bridged:
+        print(w("adminch_same"))
+        return
+    d["BRIDGE_ADMIN_CHANNEL"] = name
+
+
+def add_admin_channel(d):
+    while True:
+        name = ask_default("adminch_newname", "Admin")
+        if (0 < len(name) <= 11 and name == name.strip() and name.isprintable()
+                and name.lower() != d.get("MESH_CHANNEL", "").lower()):
+            break
+        print(w("adminch_name_bad"))
+    generated = False
+    while True:
+        v = ask(w("adminch_key"))
+        if not v:
+            psk, generated = os.urandom(32), True
+            break
+        psk = parse_psk(v)
+        if psk:
+            break
+        print(w("adminch_key_bad"))
+    key = base64.b64encode(psk).decode()
+    if not yes(w("adminch_confirm", n=name)):
+        return
+
+    def by_hand(reason):
+        print(reason)
+        print(w("adminch_manual", c=conn_args(d), n=name, k=key))
+        if yes(w("adminch_anyway"), default=False):
+            d["BRIDGE_ADMIN_CHANNEL"] = name
+
+    try:
+        slot = add_channel(d, name, psk)
+    except AlreadyThere as ex:
+        print(w("adminch_exists", n=name, i=ex.index))
+        d["BRIDGE_ADMIN_CHANNEL"] = name
+        return
+    except NoSlot:
+        return by_hand(w("adminch_noslot"))
+    except Exception as ex:
+        return by_hand(w("adminch_write_fail", err=f"{type(ex).__name__}: {ex}"))
+    if not channel_on_node(d, name, psk):
+        return by_hand(w("adminch_verify_fail"))
+    print(w("adminch_done", n=name, i=slot))
+    if generated:
+        print(w("adminch_key_show", n=name, k=key))
+    d["BRIDGE_ADMIN_CHANNEL"] = name
+
+
+def step_admin_channel(d):
+    print(w("adminch_help"))
+    cur = d.get("BRIDGE_ADMIN_CHANNEL", "")
+    if cur:
+        print(w("adminch_cur", c=cur))
+    v = ask(w("adminch_menu", d=w("adminch_keep") if cur else "1"))
+    if v == "1" or (v == "" and not cur):
+        d["BRIDGE_ADMIN_CHANNEL"] = ""
+    elif v == "2":
+        pick_admin_channel(d)
+    elif v == "3":
+        add_admin_channel(d)
+    elif v != "":
+        print(w("invalid"))
+
+
 def step_prefix(d):
     print(w("prefix_help"))
     while True:
@@ -527,9 +745,10 @@ def guided():
     d = read_conf()
     d.setdefault("BRIDGE_LANG", w.lang)
     steps = [("s_conn", step_connection), ("s_chan", step_channel), ("s_token", step_token),
-             ("s_chat", step_chat), ("s_admin", step_admin), ("s_prefix", step_prefix)]
+             ("s_chat", step_chat), ("s_admin", step_admin), ("s_adminch", step_admin_channel),
+             ("s_prefix", step_prefix)]
     for n, (what, fn) in enumerate(steps, 1):
-        print(w("step", n=n, what=w(what)))
+        print(w("step", n=n, total=len(steps), what=w(what)))
         fn(d)
     write_conf(d)
     print("\n" + w("saved", f=CONF))

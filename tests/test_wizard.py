@@ -35,7 +35,8 @@ class Wizard(unittest.TestCase):
                          "BRIDGE_CONFIG": str(self.conf), "MTB_SYSTEMD_DIR": str(self.sysd),
                          "MTB_DEV_DIR": str(dev), "MTB_STATUS_DELAY": "0", "MTB_CHAT_WAIT": "3",
                          "TG_API_BASE": self.tg.url, "FAKE_CMD_LOG": str(self.cmdlog),
-                         "FAKE_MESH_CHANNELS": ",Group,Secret", "LANG": "C"})
+                         "FAKE_MESH_CHANNELS": ",Group,Secret", "LANG": "C",
+                         "FAKE_MESH_DIR": str(self.tmp), "MTB_WRITE_WAIT": "0"})
         self.env["MTB_SUDO"] = "sudo"                       # exercise the non-root path
 
     def tearDown(self):
@@ -68,6 +69,7 @@ class Wizard(unittest.TestCase):
             "",             # first chat found
             "44444444",     # admin
             "",             # PKI only: yes
+            "",             # admin channel: none
             "CLU",          # prefix
             "",             # default service name
             "",             # install now: yes
@@ -76,7 +78,7 @@ class Wizard(unittest.TestCase):
             "0",            # exit
         ])
         self.assertEqual(rc, 0, self.out)
-        for s in ("Passo 1/6", "Canali sul nodo:", "1) Group", "Token valido: bot @test_bridge_bot",
+        for s in ("Passo 1/7", "Canali sul nodo:", "1) Group", "Token valido: bot @test_bridge_bot",
                   "Gruppo Mesh (supergroup) id -1001234567890", "Configurazione salvata",
                   "Servizio mesh-telegram-bridge abilitato e avviato", "Messaggio inviato", "Ciao."):
             self.assertIn(s, self.out)
@@ -142,13 +144,14 @@ class Wizard(unittest.TestCase):
             GOOD_TOKEN,
             "2", "abc", "-100777",      # manual chat id, first one invalid
             "!12", "!aabbccdd,1a2b3c4d", "n",
+            "",                         # admin channel: none
             "with space", "!",
             "my-bridge",
             "n",                        # do not install
             "0",
         ])
         self.assertEqual(rc, 0, self.out)
-        for s in ("Step 1/6", "Could not read the channels", "Token rejected by Telegram",
+        for s in ("Step 1/7", "Could not read the channels", "Token rejected by Telegram",
                   "Invalid node id: !12", "The prefix cannot contain spaces", "Configuration saved"):
             self.assertIn(s, self.out)
         self.assertNotIn("bad:token", self.out)
@@ -166,7 +169,7 @@ class Wizard(unittest.TestCase):
 
     def test_chat_detection_409(self):
         self.tg.conflict = True
-        rc = self.run_wizard(["1", "", "1", "n", "Group", GOOD_TOKEN, "", "-100555", "", "", "", "n", "0"])
+        rc = self.run_wizard(["1", "", "1", "n", "Group", GOOD_TOKEN, "", "-100555", "", "", "", "", "n", "0"])
         self.assertEqual(rc, 0, self.out)
         self.assertIn("another program is reading this bot (409)", self.out)
         self.assertEqual(self.read_conf()["TG_CHAT_ID"], "-100555")
@@ -175,7 +178,7 @@ class Wizard(unittest.TestCase):
         self.tg.bot_status = "member"
         rc = self.run_wizard(["1", "", "1", "n", "Group", GOOD_TOKEN, "2", "-100555",
                               "",                      # Enter after the warning
-                              "", "", "", "n", "0"])
+                              "", "", "", "", "n", "0"])
         self.assertEqual(rc, 0, self.out)
         self.assertIn("WARNING: the bot is not an administrator of this group", self.out)
         self.assertIn("REMOVE the bot from the group", self.out)
@@ -183,14 +186,102 @@ class Wizard(unittest.TestCase):
 
     def test_privacy_warning_italian_and_not_shown_when_privacy_off(self):
         self.tg.bot_status = "member"
-        rc = self.run_wizard(["2", "", "1", "n", "Group", GOOD_TOKEN, "2", "-100555", "", "", "", "", "n", "0"])
+        rc = self.run_wizard(["2", "", "1", "n", "Group", GOOD_TOKEN, "2", "-100555", "", "", "", "", "", "n", "0"])
         self.assertEqual(rc, 0, self.out)
         self.assertIn("ATTENZIONE: il bot non è amministratore di questo gruppo", self.out)
         self.tg.can_read_all = True                        # privacy disabled: no warning, no extra Enter
         self.conf.unlink()
-        rc = self.run_wizard(["2", "", "1", "n", "Group", GOOD_TOKEN, "2", "-100555", "", "", "", "n", "0"])
+        rc = self.run_wizard(["2", "", "1", "n", "Group", GOOD_TOKEN, "2", "-100555", "", "", "", "", "n", "0"])
         self.assertEqual(rc, 0, self.out)
         self.assertNotIn("ATTENZIONE", self.out)
+
+    # ------------------------------------------------------------------ admin channel
+    BASE = ["1", "", "1", "n", "Group", GOOD_TOKEN, "2", "-100555"]      # English, USB, typed chat id (bot is admin)
+
+    def run_adminch(self, answers, base=None):
+        """admin ids empty, then the admin-channel answers, then prefix/service defaults, no install, exit."""
+        return self.run_wizard((base or self.BASE) + [""] + list(answers) + ["", "", "n", "0"])
+
+    def node_channels(self):
+        import base64
+        p = self.tmp / "channels.json"
+        return [dict(c, psk=base64.b64decode(c["psk"])) for c in json.loads(p.read_text())] if p.exists() else None
+
+    def test_admin_channel_none(self):
+        self.assertEqual(self.run_adminch(["1"]), 0, self.out)
+        self.assertEqual(self.read_conf()["BRIDGE_ADMIN_CHANNEL"], "")
+        self.assertIn("Step 6/7: admin channel (optional)", self.out)
+        self.assertIsNone(self.node_channels())                    # nothing written to the node
+
+    def test_admin_channel_generated_key(self):
+        import base64
+        self.assertEqual(self.run_adminch(["3", "AdminX", "", ""]), 0, self.out)
+        self.assertEqual(self.read_conf()["BRIDGE_ADMIN_CHANNEL"], "AdminX")
+        ch = self.node_channels()
+        self.assertEqual((ch[3]["name"], ch[3]["role"], len(ch[3]["psk"])), ("AdminX", 2, 32))
+        self.assertEqual((ch[0]["role"], ch[1]["name"], ch[2]["name"]), (1, "Group", "Secret"))   # others untouched
+        self.assertIn("Channel 'AdminX' added to the node, slot 3", self.out)
+        self.assertIn(base64.b64encode(ch[3]["psk"]).decode(), self.out)                         # key shown once
+        self.assertIn("role Secondary", self.out)
+
+    def test_admin_channel_pasted_key_and_validation(self):
+        import base64
+        key = b"0123456789abcdef"
+        b64 = base64.b64encode(key).decode()
+        self.assertEqual(self.run_adminch(["3", "WayTooLongName1", "AdminX", "not base64!!", b64, ""]), 0, self.out)
+        self.assertIn("Invalid name", self.out)
+        self.assertIn("Not a valid key", self.out)
+        self.assertEqual(self.node_channels()[3]["psk"], key)
+        self.assertNotIn("this key (base64)", self.out)            # a key you pasted is not shown back
+        self.assertEqual(self.read_conf()["BRIDGE_ADMIN_CHANNEL"], "AdminX")
+
+    def test_admin_channel_declined_confirmation_writes_nothing(self):
+        self.assertEqual(self.run_adminch(["3", "AdminX", "", "n"]), 0, self.out)
+        self.assertIsNone(self.node_channels())
+        self.assertEqual(self.read_conf()["BRIDGE_ADMIN_CHANNEL"], "")
+
+    def test_admin_channel_existing_on_node(self):
+        self.assertEqual(self.run_adminch(["2", "2"]), 0, self.out)
+        self.assertEqual(self.read_conf()["BRIDGE_ADMIN_CHANNEL"], "Secret")
+        self.assertIn("  2) Secret", self.out)
+        self.assertNotIn("0) MediumFast", self.out)                # primary and bridged channels are not offered
+        self.assertNotIn("1) Group", self.out)
+
+    def test_admin_channel_name_already_on_node_is_reused(self):
+        self.assertEqual(self.run_adminch(["3", "secret", "", ""]), 0, self.out)
+        self.assertIn("already on the node (slot 2)", self.out)
+        self.assertEqual(self.read_conf()["BRIDGE_ADMIN_CHANNEL"], "secret")
+        self.assertIsNone(self.node_channels())                    # not rewritten
+
+    def test_admin_channel_no_free_slot(self):
+        self.env["FAKE_MESH_CHANNELS"] = ",Group,B,C,D,E,F,G"
+        self.assertEqual(self.run_adminch(["3", "AdminX", "", "", "n"]), 0, self.out)
+        self.assertIn("no free channel slot", self.out)
+        self.assertIn("--ch-add AdminX", self.out)
+        self.assertIn("--port ", self.out)
+        self.assertEqual(self.read_conf()["BRIDGE_ADMIN_CHANNEL"], "")
+
+    def test_admin_channel_write_failure_gives_manual_steps(self):
+        self.env["FAKE_MESH_WRITE_FAIL"] = "1"
+        self.assertEqual(self.run_adminch(["3", "AdminX", "", "", "y"]), 0, self.out)
+        self.assertIn("Could not write the channel to the node", self.out)
+        self.assertIn("--ch-set psk base64:", self.out)
+        self.assertEqual(self.read_conf()["BRIDGE_ADMIN_CHANNEL"], "AdminX")      # kept, added by hand later
+
+    def test_admin_channel_italian(self):
+        base = ["2", "", "1", "n", "Group", GOOD_TOKEN, "2", "-100555"]
+        self.assertEqual(self.run_adminch(["3", "AdminX", "", ""], base=base), 0, self.out)
+        for s in ("Passo 6/7: canale di amministrazione (facoltativo)", "Canale 'AdminX' aggiunto al nodo, slot 3",
+                  "ruolo Secondario"):
+            self.assertIn(s, self.out)
+
+    def test_reconfiguring_keeps_the_current_admin_channel(self):
+        self.conf.write_text(f"BRIDGE_LANG=en\nMESH_PORT={self.port}\nMESH_CHANNEL=Group\nTG_TOKEN={GOOD_TOKEN}\n"
+                             "TG_CHAT_ID=-1\nBRIDGE_ADMIN_CHANNEL=Old\n")
+        rc = self.run_wizard(["", "", "n", "", "", "2", "", "", "", "", "", "n"], "config")
+        self.assertEqual(rc, 0, self.out)
+        self.assertIn("Current admin channel: Old", self.out)
+        self.assertEqual(self.read_conf()["BRIDGE_ADMIN_CHANNEL"], "Old")
 
     def test_install_refuses_incomplete_config(self):
         self.conf.write_text("BRIDGE_LANG=it\nMESH_CHANNEL=Group\n")
