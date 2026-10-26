@@ -3,7 +3,8 @@
 
 Every text message written on one Meshtastic channel goes to a Telegram group, and every
 message of the group goes to that channel. Anyone can ask for the messages they missed with
-"<prefix>repeat <n>" (Italian: "<prefix>ripeti <n>"); admins control the bridge by encrypted DM.
+"<prefix>repeat <n>" (Italian: "<prefix>ripeti <n>"); admins control the bridge by encrypted DM
+or on an optional admin channel.
 
 Configuration: config.env next to this file (created by ./setup.sh, see config.env.example).
 Run:  python bridge.py            (normally started by systemd)
@@ -29,6 +30,25 @@ BASE = Path(__file__).resolve().parent
 EX_CONFIG = 78                      # exit code for configuration errors: systemd does not restart
 
 log = logging.getLogger("bridge")
+
+
+class LogRing(logging.Handler):
+    """Keeps the last log lines in memory for the admin command 'log'."""
+
+    def __init__(self, n=300):
+        super().__init__()
+        self.rows = deque(maxlen=n)
+
+    def emit(self, record):
+        try:
+            self.rows.append((record.created, record.getMessage()))
+        except Exception:
+            pass
+
+
+RING = LogRing()
+log.addHandler(RING)
+log.setLevel(logging.INFO)
 
 
 # ================================================================== configuration
@@ -248,6 +268,9 @@ tg_out = queue.Queue()   # messages for Telegram, sent by their own thread (neve
 tx_lock = threading.Lock()
 repeat_ts = {"M": 0.0, "TG": 0.0}
 seen = deque(maxlen=500)
+sent = {}                # admin DM / admin channel -> last replies sent there (for "repeat <n>")
+LOG_PAGES = 3            # the 'log' command fits in at most this many mesh messages
+LOG_LINE = 90            # characters kept from each log line
 http = requests.Session()
 
 
@@ -527,14 +550,40 @@ def norm_id(x):
     return x if x.startswith("!") else "!" + x
 
 
+def log_pages(n=0, skip=""):
+    """The newest log lines first, packed into at most LOG_PAGES mesh messages.
+    n > 0 limits the number of lines; skip drops the line of the request itself."""
+    rows = list(RING.rows)[::-1]
+    if rows and skip and rows[0][1].endswith(skip):
+        rows = rows[1:]
+    today = time.strftime("%Y%m%d")
+    lines, pages = [t("adm_log_head")], None
+    for ts, msg in rows[:n or None]:
+        lt = time.localtime(ts)
+        when = time.strftime("%H:%M" if time.strftime("%Y%m%d", lt) == today else "%d/%m %H:%M", lt)
+        msg = re.sub(r"\s+", " ", msg).strip()
+        line = f"{when} {msg if len(msg) <= LOG_LINE else msg[:LOG_LINE - 1] + '…'}"
+        cand = paginate_lines(lines + [line])
+        if len(cand) > LOG_PAGES:
+            break
+        lines.append(line)
+        pages = cand
+    return pages or [t("adm_log_empty")]
+
+
 def handle_admin(uid, text):
-    """Admin commands by DM. Returns the reply, or None if it is not a command."""
+    """Admin commands (DM or admin channel). Returns the reply (a text, or a list of ready mesh
+    messages), or None if it is not a command."""
     w = text.split()
     if w and cfg.prefix and w[0].lower().rstrip(",:.!?") == cfg.prefix.lower():
         w = w[1:]
+    if w and cfg.prefix and w[0].lower().startswith(cfg.prefix.lower()) and not cfg.prefix[-1].isalnum():
+        w[0] = w[0][len(cfg.prefix):]                       # "!log" -> "log"
     if not w:
         return None
-    c, a = w[0].lower().strip("!.,:;?"), (w[1].lower() if len(w) > 1 else "")
+    c, a = w[0].lower().strip("!.,:;?/"), (w[1].lower() if len(w) > 1 else "")
+    if c in ("log", "botlog") and len(w) <= 2 and (not a or a.isdigit()):
+        return log_pages(int(a or 0), skip=text)
     onoff = lambda b: "on" if b else "off"
     if c in ("status", "stato") and len(w) == 1:
         return t("adm_status", state=onoff(state.bridge), ch=channel_name(), up=uptime(),
@@ -556,6 +605,42 @@ def handle_admin(uid, text):
     return None
 
 
+def admin_repeat(text):
+    """None if not 'repeat [n]'; otherwise how many replies to resend (1 if no number)."""
+    w = text.split()
+    if w and cfg.prefix and w[0].lower().rstrip(",:.!?") == cfg.prefix.lower():
+        w = w[1:]
+    if not w or len(w) > 2:
+        return None
+    c = w[0].lower()
+    if cfg.prefix and not cfg.prefix[-1].isalnum() and c.startswith(cfg.prefix.lower()):
+        c = c[len(cfg.prefix):]
+    if c.strip("/.,:;?") not in ("repeat", "ripeti"):
+        return None
+    a = w[1].strip(".!?") if len(w) == 2 else "1"
+    return min(int(a), cfg.history_n) if a.isdigit() and int(a) > 0 else None
+
+
+def admin_answer(uid, text, dest, ch, help_if_unknown):
+    """Run an admin command and send the reply to the DM (dest) or to the admin channel.
+    Replies are remembered per place, so 'repeat <n>' resends the last n messages sent there."""
+    key = dest or f"#{ch}"
+    n = admin_repeat(text)
+    if n is not None:
+        old = list(sent.get(key, ()))[-n:]
+        for p in old or [t("adm_repeat_none")]:
+            mesh_send(p, dest=dest, ch=ch)
+        return
+    reply = handle_admin(uid, text) or (t("adm_help") if help_if_unknown else None)
+    if not reply:                                               # unknown chatter gets no answer
+        return
+    pages = reply if isinstance(reply, list) else paginate(reply)
+    box = sent.setdefault(key, deque(maxlen=cfg.history_n))
+    for p in pages:
+        box.append(p)
+        mesh_send(p, dest=dest, ch=ch)
+
+
 def handle_packet(pkt):
     text = (pkt.get("decoded") or {}).get("text", "").strip()
     num = pkt.get("from")
@@ -566,9 +651,7 @@ def handle_packet(pkt):
     if pkt.get("to") == MY_NUM:                                  # direct message
         if uid in cfg.admins and (pkt.get("pkiEncrypted") or not cfg.admin_pki):
             log.info(f"[ADMIN {uid}] {text}")
-            reply = handle_admin(uid, text) or t("adm_help")
-            for p in paginate(reply):
-                mesh_send(p, dest=uid, ch=ch)
+            admin_answer(uid, text, uid, ch, True)
         else:
             log.info(t("log_dm_ignored", uid=uid))
         return
@@ -576,11 +659,7 @@ def handle_packet(pkt):
         if cfg.admins and uid not in cfg.admins:
             return log.info(t("log_admin_ch_ignored", uid=uid))
         log.info(f"[ADMIN-CH {uid}] {text}")
-        reply = handle_admin(uid, text)
-        if reply:                                                # unknown chatter gets no answer
-            for p in paginate(reply):
-                mesh_send(p, ch=ADMIN_IDX)
-        return
+        return admin_answer(uid, text, None, ADMIN_IDX, False)
     if ch != BRIDGE_IDX or uid in state.ban:
         return
     n = parse_repeat(text)

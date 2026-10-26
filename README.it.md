@@ -23,8 +23,8 @@ leggono tutto.
 - **Rispetto del tempo d'aria**: i messaggi Telegram lunghi sono tagliati a 4 messaggi radio
   (configurabile), le trasmissioni sono distanziate e Telegram ha un thread tutto suo, così una
   rete lenta non blocca mai la radio.
-- **Controllo remoto con DM cifrato**: gli amministratori inviano `stato`, `bridge on|off`,
-  `ban <id>`, `unban <id>` al nodo del bridge.
+- **Controllo remoto con DM cifrato o canale admin**: `stato`, `bridge on|off`, `ban <id>`,
+  `unban <id>`, `log` (il log del bot via radio) e `ripeti <n>` (rimanda le ultime risposte).
 - **Italiano o inglese**: menu, log e messaggi del bridge; i comandi sono accettati in entrambe
   le lingue (`ripeti`/`repeat`, `stato`/`status`).
 - **Configurazione guidata**: un menu trova la porta seriale, legge i canali dal nodo, verifica
@@ -90,6 +90,8 @@ Le stesse azioni si possono lanciare direttamente: `./setup.sh config|install|un
 | DM al nodo del bridge, o sul canale admin (admin) | `stato` | Stato del bridge, tempo di attività, contatori |
 | | `bridge on` / `bridge off` | Riprende o sospende l'inoltro (i messaggi restano disponibili per `ripeti`) |
 | | `ban <id>` / `unban <id>` | Ignora un nodo sul canale collegato |
+| | `ripeti <n>` (`repeat <n>`) | Rimanda le ultime *n* risposte del bridge in quel posto (DM o canale admin), ad es. una pagina persa |
+| | `log [n]` (`botlog`) | Il log del bridge, dal più recente, in massimo 3 messaggi (*n* = righe massime) |
 
 Di default i comandi admin sono accettati solo nei DM cifrati PKI (Meshtastic 2.5+), così
 nessuno può spacciarsi per un admin falsificando l'ID del nodo.

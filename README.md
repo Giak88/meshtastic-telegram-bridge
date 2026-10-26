@@ -22,8 +22,8 @@ everyone reads everything.
 - **Airtime-friendly**: long Telegram messages are cut to 4 radio messages (configurable),
   transmissions are paced, and Telegram is handled on its own thread so a slow network never
   blocks the radio.
-- **Remote control by encrypted DM**: admins send `status`, `bridge on|off`, `ban <id>`,
-  `unban <id>` to the bridge node.
+- **Remote control by encrypted DM or admin channel**: `status`, `bridge on|off`, `ban <id>`,
+  `unban <id>`, `log` (the bot log on the radio) and `repeat <n>` (resend the last replies).
 - **English or Italian**: menu, logs and bridge messages; commands are accepted in both
   (`repeat`/`ripeti`, `status`/`stato`).
 - **Guided setup**: one menu finds the serial port, reads the channels from the node, checks
@@ -89,6 +89,8 @@ The same actions are available directly: `./setup.sh config|install|uninstall|st
 | DM to the bridge node, or on the admin channel (admin) | `status` | Bridge state, uptime, counters |
 | | `bridge on` / `bridge off` | Stop or resume forwarding (messages are still kept for `repeat`) |
 | | `ban <id>` / `unban <id>` | Ignore a node on the bridged channel |
+| | `repeat <n>` (`ripeti <n>`) | Resend the last *n* replies the bridge sent there (DM or admin channel), e.g. a page you missed |
+| | `log [n]` (`botlog`) | The bridge's log, newest first, in at most 3 messages (*n* = max lines) |
 
 By default admin commands are accepted only in PKI-encrypted DMs (Meshtastic 2.5+), so nobody
 can impersonate an admin by faking a node id.

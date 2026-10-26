@@ -20,7 +20,11 @@ STRINGS = {
         "adm_bridge": "Bridge: {state} ({ch} <-> Telegram).",
         "adm_ban": "Ban: {id} banned.",
         "adm_unban": "Unban: {id} unbanned.",
-        "adm_help": "Admin (DM): status, bridge on|off, ban <id>, unban <id>.",
+        "adm_help": ("Admin: status, bridge on|off, ban <id>, unban <id>, repeat <n> (my last n replies here), "
+                     "log [n] (bot log, newest first)."),
+        "adm_repeat_none": "Repeat: no replies to repeat yet.",
+        "adm_log_head": "Log, newest first:",
+        "adm_log_empty": "Log: empty.",
         # ---------------------------------------------------------------- log
         "log_start": "Meshtastic-Telegram bridge {ver} starting (language: English)",
         "log_cfg_missing": "Missing setting {key} in config.env: run ./setup.sh",
@@ -34,7 +38,7 @@ STRINGS = {
         "log_admin_channel": "Admin channel: '{ch}' (index {idx}), commands accepted from: {who}",
         "who_any": "any node on the channel",
         "log_no_admin_channel": ("Admin channel '{ch}' not found on the node (available: {avail}): "
-                                 "admin commands work by DM only."),
+                                 "admin commands work by DM only (admin channel disabled)."),
         "log_admin_same": "BRIDGE_ADMIN_CHANNEL must be different from MESH_CHANNEL ('{ch}').",
         "log_admin_ch_ignored": "[ADMIN-CH {uid}] ignored (not an admin)",
         "log_not_forwarded": " (bridge off, not forwarded)",
@@ -74,7 +78,11 @@ STRINGS = {
         "adm_bridge": "Bridge: {state} ({ch} <-> Telegram).",
         "adm_ban": "Ban: {id} bannato.",
         "adm_unban": "Unban: {id} sbannato.",
-        "adm_help": "Admin (DM): stato, bridge on|off, ban <id>, unban <id>.",
+        "adm_help": ("Admin: stato, bridge on|off, ban <id>, unban <id>, ripeti <n> (mie ultime n risposte qui), "
+                     "log [n] (log del bot, dal più recente)."),
+        "adm_repeat_none": "Ripeti: ancora nessuna risposta da ripetere.",
+        "adm_log_head": "Log, dal più recente:",
+        "adm_log_empty": "Log: vuoto.",
         "log_start": "Avvio del bridge Meshtastic-Telegram {ver} (lingua: italiano)",
         "log_cfg_missing": "Manca l'impostazione {key} in config.env: esegui ./setup.sh",
         "log_wait_dev": "Attendo il dispositivo {port}...",
@@ -87,7 +95,7 @@ STRINGS = {
         "log_admin_channel": "Canale admin: '{ch}' (indice {idx}), comandi accettati da: {who}",
         "who_any": "qualsiasi nodo sul canale",
         "log_no_admin_channel": ("Canale admin '{ch}' non presente sul nodo (disponibili: {avail}): "
-                                 "i comandi admin funzionano solo in DM."),
+                                 "canale admin disattivato, i comandi admin funzionano solo in DM."),
         "log_admin_same": "BRIDGE_ADMIN_CHANNEL deve essere diverso da MESH_CHANNEL ('{ch}').",
         "log_admin_ch_ignored": "[CANALE-ADMIN {uid}] ignorato (non è un admin)",
         "log_not_forwarded": " (bridge spento, non inoltrato)",

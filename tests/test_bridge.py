@@ -96,6 +96,36 @@ class Pure(unittest.TestCase):
         self.assertIn("!22222222", bridge.state.ban)
         self.assertIsNone(bridge.handle_admin("!44444444", "come va?"))
 
+    def test_log_pages_newest_first_max_3(self):
+        bridge.RING.rows.clear()
+        for i in range(200):
+            bridge.log.info(f"line {i:03d} " + "x" * 120)
+        bridge.log.info("[ADMIN !44444444] log")
+        pages = bridge.handle_admin("!44444444", "log")
+        self.assertLessEqual(len(pages), bridge.LOG_PAGES)
+        self.assertTrue(pages[0].startswith("Log, newest first: "))
+        self.assertNotIn("[ADMIN", pages[0])                    # the request itself is skipped
+        body = " ".join(pages)
+        self.assertLess(body.index("line 199"), body.index("line 198"))
+        for p in pages:
+            self.assertLessEqual(len(p), bridge.MAX_CHARS)
+            self.assertLessEqual(len(p.encode()), bridge.MAX_BYTES)
+        bridge.log.info("line 200")
+        bridge.log.info("[ADMIN !44444444] !botlog 1")
+        self.assertEqual(" ".join(bridge.handle_admin("!44444444", "!botlog 1")).count("line "), 1)
+        self.assertIn("line 200", bridge.handle_admin("!44444444", "log 1")[0])
+        bridge.RING.rows.clear()
+        self.assertEqual(bridge.handle_admin("!44444444", "log"), ["Log: empty."])
+
+    def test_admin_repeat_parse(self):
+        r = bridge.admin_repeat
+        self.assertEqual(r("ripeti 3"), 3)
+        self.assertEqual(r("!repeat 2"), 2)
+        self.assertEqual(r("ripeti"), 1)
+        self.assertEqual(r("ripeti 99"), 20)
+        self.assertIsNone(r("ripeti tre"))
+        self.assertIsNone(r("status"))
+
     def test_config_ids_normalised(self):
         c = bridge.Config({"BRIDGE_ADMINS": "1A2B3C4D, !aabbccdd"})
         self.assertEqual(c.admins, {"!1a2b3c4d", "!aabbccdd"})
@@ -233,6 +263,35 @@ class EndToEnd(unittest.TestCase):
         self.assertFalse(json.loads((self.tmp / "state.json").read_text())["bridge"])
         self.mesh_rx("hello", ch=1)                                     # bridged channel still handled (bridge off)
         self.wait(lambda: "bridge off, not forwarded" in self.logtext())
+
+    def test_admin_repeat_last_replies_and_log(self):
+        self.start(FAKE_MESH_CHANNELS=",Group,Admin", BRIDGE_ADMIN_CHANNEL="Admin")
+        self.ready()
+        dm = lambda text: self.mesh_rx(text, frm=ADMIN, ch=0, to=0x11111111, pki=True)
+        to_admin = lambda: [o["text"] for o in self.outbox() if o["dest"] == "!44444444"]
+        dm("help")
+        self.wait(lambda: len(to_admin()) == 1)
+        dm("ban 22222222")
+        self.wait(lambda: len(to_admin()) == 2)
+        dm("status")
+        self.wait(lambda: len(to_admin()) == 3)
+        dm("ripeti 3")                                    # the last 3 replies, in order
+        self.wait(lambda: len(to_admin()) == 6)
+        self.assertEqual(to_admin()[3:], to_admin()[:3])
+        dm("repeat")                                      # no number: the last one
+        self.wait(lambda: len(to_admin()) == 7)
+        self.assertEqual(to_admin()[-1], to_admin()[2])
+        # admin channel has its own memory
+        self.mesh_rx("!repeat 2", frm=ADMIN, ch=2)
+        self.wait(lambda: any(o["ch"] == 2 and o["text"].startswith("Repeat: no replies") for o in self.outbox()))
+        self.mesh_rx("log", frm=ADMIN, ch=2)
+        self.wait(lambda: any(o["ch"] == 2 and o["text"].startswith("Log, newest first:") for o in self.outbox()))
+        time.sleep(0.5)
+        logs = [o["text"] for o in self.outbox() if o["ch"] == 2 and o["text"] != "Repeat: no replies to repeat yet."]
+        self.assertLessEqual(len(logs), 3)
+        self.mesh_rx("ripeti 5", frm=ADMIN, ch=2)
+        self.wait(lambda: [o["text"] for o in self.outbox() if o["ch"] == 2][-len(logs):] == logs
+                  and sum(o["ch"] == 2 for o in self.outbox()) == 1 + 2 * len(logs))
 
     def test_admin_channel_without_admin_ids_is_open_to_its_members(self):
         self.start(lang="it", FAKE_MESH_CHANNELS=",Group,Admin", BRIDGE_ADMIN_CHANNEL="admin", BRIDGE_ADMINS="")
