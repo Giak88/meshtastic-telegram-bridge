@@ -55,7 +55,7 @@ Al primo avvio chiede la lingua, poi guida in sei passi:
    si scrive finisce su Telegram.
 3. **Bot Telegram**: crealo con [@BotFather](https://t.me/BotFather) (`/newbot`) e incolla il
    token (viene verificato subito). Aggiungi il bot al gruppo **come amministratore**, oppure
-   disattiva la privacy (`/setprivacy` → Disable), altrimenti non può leggere il gruppo.
+   disattiva la privacy (`/setprivacy` → Disable), altrimenti non può leggere il gruppo. La configurazione lo controlla e ti avvisa; il bridge scrive lo stesso avviso nel log all'avvio.
 4. **Gruppo Telegram**: scrivi qualcosa nel gruppo e il bridge ne rileva l'id.
 5. **Amministratori** (facoltativo): gli ID dei nodi che possono controllare il bridge via DM.
 6. **Prefisso dei comandi**: `!` di default (`!ripeti 3`); va bene anche una parola (`BOT` → `BOT ripeti 3`).

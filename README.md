@@ -54,7 +54,7 @@ The first run asks for the language, then guides you through six steps:
    written there ends up on Telegram.
 3. **Telegram bot**: create one with [@BotFather](https://t.me/BotFather) (`/newbot`), paste the
    token (it is checked immediately). Add the bot to your group **as administrator**, or disable
-   its privacy mode (`/setprivacy` → Disable), otherwise it cannot read the group.
+   its privacy mode (`/setprivacy` → Disable), otherwise it cannot read the group. The setup checks this and warns you; the bridge logs the same warning at start.
 4. **Telegram group**: write anything in the group and the bridge detects its id.
 5. **Administrators** (optional): node ids allowed to control the bridge by DM.
 6. **Command prefix**: `!` by default (`!repeat 3`); any word works (`BOT` → `BOT repeat 3`).

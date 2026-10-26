@@ -185,6 +185,7 @@ class EndToEnd(unittest.TestCase):
         self.start()
         self.ready()
         self.assertIn("starting (language: English)", self.logtext())
+        self.assertNotIn("privacy mode", self.logtext())            # the bot is admin: no warning
         # mesh -> Telegram
         self.mesh_rx("hello from the mesh")
         self.wait(lambda: "Alice: hello from the mesh" in self.tg.texts())
@@ -213,6 +214,19 @@ class EndToEnd(unittest.TestCase):
         self.mesh_rx("!repeat")
         self.wait(lambda: any(o["text"].startswith("Usage: !repeat <number>") for o in self.outbox()))
         self.assertNotIn("on MediumFast", " ".join(self.tg.texts()))
+
+    def test_privacy_warning(self):
+        self.tg.bot_status = "member"                       # not admin, privacy on
+        self.start()
+        self.ready()
+        self.wait(lambda: "privacy mode is ON" in self.logtext())
+        self.stop()
+        self.tg.can_read_all = True                         # privacy disabled: no warning
+        open(self.tmp / "log.txt", "w").close()
+        self.start()
+        self.ready()
+        time.sleep(1)
+        self.assertNotIn("privacy mode", self.logtext())
 
     def test_italian_admin_and_bridge_off(self):
         self.start(lang="it")

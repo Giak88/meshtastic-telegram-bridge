@@ -391,12 +391,26 @@ def handle_tg_update(u):
     jobs.put(lambda: tg_to_mesh(text, author))
 
 
+def tg_check_access():
+    """Warn if Telegram will not deliver the group's normal messages to the bot: that happens when
+    privacy mode is on and the bot is not an administrator (messages bridge only mesh -> Telegram)."""
+    try:
+        me = tg_api("getMe")
+        member = tg_api("getChatMember", {"chat_id": cfg.tg_chat, "user_id": me["id"]})
+    except Exception:
+        return                                           # cannot tell: no false alarm
+    if member.get("status") in ("administrator", "creator") or me.get("can_read_all_group_messages"):
+        return
+    log.warning(t("log_tg_privacy"))
+
+
 def tg_poll():
     """Long polling. The offset is saved, so nothing is lost or duplicated across restarts."""
     try:
         tg_api("deleteWebhook", {"drop_pending_updates": False})   # getUpdates fails if a webhook is set
     except Exception:
         pass
+    tg_check_access()
     while True:
         try:
             par = {"timeout": 50, "allowed_updates": ["message", "channel_post"]}

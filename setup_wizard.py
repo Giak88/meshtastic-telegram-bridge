@@ -90,7 +90,16 @@ W = {
         "chat_wait": "Write any message in the Telegram group now (waiting up to {s} s, Ctrl+C to stop)...",
         "chat_found": "Chats seen by the bot:",
         "chat_pick": "Number of the group [1]: ",
-        "chat_none": "No message received.",
+        "chat_none": ("No message received. If you did write in the group, the bot probably cannot read it: make it an "
+                      "administrator of the group, or disable privacy in @BotFather (/setprivacy -> Disable) and then "
+                      "remove and re-add the bot."),
+        "privacy_warn": ("\nWARNING: the bot is not an administrator of this group and Telegram's privacy mode is ON.\n"
+                         "In this state Telegram delivers only commands and mentions to the bot, so messages written in the\n"
+                         "group will NOT reach the mesh (the other direction works). Fix it now:\n"
+                         "  - make the bot an administrator of the group, or\n"
+                         "  - in @BotFather: /setprivacy -> select the bot -> Disable, and then REMOVE the bot from the group\n"
+                         "    and add it again (the setting only applies to groups joined afterwards).\n"
+                         "Press Enter when done (or to continue anyway)..."),
         "chat_409": ("Telegram says another program is reading this bot (409). Stop the bridge "
                      "service first (menu 3), then retry."),
         "chat_ask": "Chat id (groups are negative, e.g. -1001234567890) [{d}]: ",
@@ -173,7 +182,16 @@ W = {
         "chat_wait": "Scrivi un messaggio qualsiasi nel gruppo Telegram adesso (attendo fino a {s} s, Ctrl+C per smettere)...",
         "chat_found": "Chat viste dal bot:",
         "chat_pick": "Numero del gruppo [1]: ",
-        "chat_none": "Nessun messaggio ricevuto.",
+        "chat_none": ("Nessun messaggio ricevuto. Se hai scritto nel gruppo, il bot probabilmente non lo legge: rendilo "
+                      "amministratore del gruppo, oppure disattiva la privacy in @BotFather (/setprivacy -> Disable) e poi "
+                      "togli e riaggiungi il bot."),
+        "privacy_warn": ("\nATTENZIONE: il bot non è amministratore di questo gruppo e la modalità privacy di Telegram è ATTIVA.\n"
+                         "In questo stato Telegram consegna al bot solo comandi e menzioni, quindi i messaggi scritti nel\n"
+                         "gruppo NON arriveranno in mesh (nell'altra direzione funziona). Sistemalo ora:\n"
+                         "  - rendi il bot amministratore del gruppo, oppure\n"
+                         "  - in @BotFather: /setprivacy -> scegli il bot -> Disable, poi TOGLI il bot dal gruppo e\n"
+                         "    riaggiungilo (l'impostazione vale solo per i gruppi a cui si aggiunge dopo).\n"
+                         "Premi Invio quando hai fatto (o per continuare comunque)..."),
         "chat_409": ("Telegram dice che un altro programma sta leggendo questo bot (409). Ferma prima il "
                      "servizio del bridge (menu 3), poi riprova."),
         "chat_ask": "Id della chat (i gruppi sono negativi, es. -1001234567890) [{d}]: ",
@@ -419,7 +437,7 @@ def detect_chat(token, wait=120):
                 raise
             for u in ups:
                 last = u["update_id"]
-                for k in ("message", "channel_post", "my_chat_member", "edited_message"):
+                for k in ("message", "channel_post"):          # a real message proves the bot can read the group
                     c = (u.get(k) or {}).get("chat")
                     if c and c.get("type") != "private":
                         chats[str(c["id"])] = (str(c["id"]), c.get("title") or "?", c.get("type", "?"))
@@ -433,7 +451,26 @@ def detect_chat(token, wait=120):
     return list(chats.values())
 
 
+def check_bot_access(d):
+    """Telegram delivers only commands and mentions to a bot in a group when privacy mode is on and the
+    bot is not an administrator: the bridge would then work only from the mesh to Telegram."""
+    try:
+        me = tg(d["TG_TOKEN"], "getMe")
+        member = tg(d["TG_TOKEN"], "getChatMember", {"chat_id": d["TG_CHAT_ID"], "user_id": me["id"]})
+    except Exception:
+        return                                           # cannot tell: no false alarm
+    if member.get("status") in ("administrator", "creator") or me.get("can_read_all_group_messages"):
+        return
+    print(w("privacy_warn"))
+    ask("")
+
+
 def step_chat(d):
+    pick_chat(d)
+    check_bot_access(d)
+
+
+def pick_chat(d):
     if ask(w("chat_how")) != "2":
         try:
             chats = detect_chat(d["TG_TOKEN"], int(os.environ.get("MTB_CHAT_WAIT", "120")))

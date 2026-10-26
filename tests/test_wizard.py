@@ -152,6 +152,7 @@ class Wizard(unittest.TestCase):
                   "Invalid node id: !12", "The prefix cannot contain spaces", "Configuration saved"):
             self.assertIn(s, self.out)
         self.assertNotIn("bad:token", self.out)
+        self.assertNotIn("WARNING", self.out)              # the bot is admin: no privacy warning
         c = self.read_conf()
         self.assertEqual((c["MESH_HOST"], c["MESH_PORT"]), ("192.168.1.50", ""))
         self.assertEqual(c["MESH_CHANNEL"], "MyGroup")
@@ -169,6 +170,27 @@ class Wizard(unittest.TestCase):
         self.assertEqual(rc, 0, self.out)
         self.assertIn("another program is reading this bot (409)", self.out)
         self.assertEqual(self.read_conf()["TG_CHAT_ID"], "-100555")
+
+    def test_privacy_warning_when_bot_is_not_admin(self):
+        self.tg.bot_status = "member"
+        rc = self.run_wizard(["1", "", "1", "n", "Group", GOOD_TOKEN, "2", "-100555",
+                              "",                      # Enter after the warning
+                              "", "", "", "n", "0"])
+        self.assertEqual(rc, 0, self.out)
+        self.assertIn("WARNING: the bot is not an administrator of this group", self.out)
+        self.assertIn("REMOVE the bot from the group", self.out)
+        self.assertEqual(self.read_conf()["TG_CHAT_ID"], "-100555")      # configuration still saved
+
+    def test_privacy_warning_italian_and_not_shown_when_privacy_off(self):
+        self.tg.bot_status = "member"
+        rc = self.run_wizard(["2", "", "1", "n", "Group", GOOD_TOKEN, "2", "-100555", "", "", "", "", "n", "0"])
+        self.assertEqual(rc, 0, self.out)
+        self.assertIn("ATTENZIONE: il bot non è amministratore di questo gruppo", self.out)
+        self.tg.can_read_all = True                        # privacy disabled: no warning, no extra Enter
+        self.conf.unlink()
+        rc = self.run_wizard(["2", "", "1", "n", "Group", GOOD_TOKEN, "2", "-100555", "", "", "", "n", "0"])
+        self.assertEqual(rc, 0, self.out)
+        self.assertNotIn("ATTENZIONE", self.out)
 
     def test_install_refuses_incomplete_config(self):
         self.conf.write_text("BRIDGE_LANG=it\nMESH_CHANNEL=Group\n")

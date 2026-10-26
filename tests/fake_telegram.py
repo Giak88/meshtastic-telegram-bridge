@@ -17,6 +17,8 @@ class FakeTelegram:
         self.sent = []             # sendMessage payloads
         self.fail_next_send = []   # list of (code, retry_after) to return on next sends
         self.conflict = False
+        self.bot_status = "administrator"   # what getChatMember says about the bot
+        self.can_read_all = False          # getMe: privacy mode disabled?
         srv = self
 
         class H(BaseHTTPRequestHandler):
@@ -62,7 +64,10 @@ class FakeTelegram:
         if token != GOOD_TOKEN:
             return 401, {"ok": False, "error_code": 401, "description": "Unauthorized"}
         if method == "getMe":
-            return 200, {"ok": True, "result": {"id": 123456, "is_bot": True, "username": "test_bridge_bot"}}
+            return 200, {"ok": True, "result": {"id": 123456, "is_bot": True, "username": "test_bridge_bot",
+                                                "can_read_all_group_messages": self.can_read_all}}
+        if method == "getChatMember":
+            return 200, {"ok": True, "result": {"status": self.bot_status, "user": {"id": body.get("user_id")}}}
         if method == "deleteWebhook":
             return 200, {"ok": True, "result": True}
         if method == "getUpdates":

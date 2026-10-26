@@ -37,6 +37,10 @@ STRINGS = {
         "log_tg_conflict": ("[TG] 409 Conflict: another program is reading this bot's updates "
                             "(same token used twice). Retrying in 30 s."),
         "log_tg_unauth": "[TG] invalid token (401): check TG_TOKEN. Retrying in 5 min.",
+        "log_tg_privacy": ("[TG] WARNING: the bot is not an administrator of the group and its privacy mode is ON: "
+                           "Telegram only delivers commands and mentions to it, so normal group messages will NOT "
+                           "reach the mesh. Make the bot an administrator, or disable privacy (BotFather: /setprivacy -> "
+                           "Disable) and then remove and re-add the bot to the group."),
         "log_tg_wait": "[TG] rate limited by Telegram, waiting {s} s",
         "log_tg_send_fail": "[TG] send failed after {n} attempts: {err}",
         "log_tg_other_chat": "[TG] message from '{title}' ({type}) id {id}: not the configured chat, ignored",
@@ -80,6 +84,10 @@ STRINGS = {
         "log_tg_conflict": ("[TG] 409 Conflict: un altro programma legge gli aggiornamenti di questo bot "
                             "(stesso token usato due volte). Riprovo tra 30 s."),
         "log_tg_unauth": "[TG] token non valido (401): controlla TG_TOKEN. Riprovo tra 5 min.",
+        "log_tg_privacy": ("[TG] ATTENZIONE: il bot non è amministratore del gruppo e la sua modalità privacy è ATTIVA: "
+                           "Telegram gli consegna solo comandi e menzioni, quindi i messaggi normali del gruppo NON "
+                           "arriveranno in mesh. Rendi il bot amministratore, oppure disattiva la privacy (BotFather: "
+                           "/setprivacy -> Disable) e poi togli e riaggiungi il bot al gruppo."),
         "log_tg_wait": "[TG] limite di frequenza di Telegram, attendo {s} s",
         "log_tg_send_fail": "[TG] invio fallito dopo {n} tentativi: {err}",
         "log_tg_other_chat": "[TG] messaggio da '{title}' ({type}) id {id}: non è la chat configurata, ignorato",
