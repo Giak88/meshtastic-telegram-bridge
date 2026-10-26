@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "systemctl $*" >> "$FAKE_CMD_LOG"
+exit 0

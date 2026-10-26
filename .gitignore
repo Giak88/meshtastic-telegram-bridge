@@ -1,0 +1,8 @@
+venv/
+__pycache__/
+*.pyc
+config.env
+config.tmp
+state.json
+history.json
+*.tmp
