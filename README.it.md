@@ -42,8 +42,8 @@ Niente MQTT, niente broker, nessuna connessione internet necessaria dal lato rad
 
 ```bash
 sudo apt install git python3-venv
-git clone https://github.com/Giak88/mesh-telegram-bridge.git
-cd mesh-telegram-bridge
+git clone https://github.com/Giak88/meshtastic-telegram-bridge.git
+cd meshtastic-telegram-bridge
 ./setup.sh
 ```
 
