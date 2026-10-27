@@ -25,7 +25,7 @@ import requests
 
 from i18n import Tr
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 BASE = Path(__file__).resolve().parent
 EX_CONFIG = 78                      # exit code for configuration errors: systemd does not restart
 
@@ -92,6 +92,7 @@ class Config:
         self.repeat_pause = int(e("BRIDGE_REPEAT_PAUSE", "30"))       # s between two repeats per side
         self.max_parts = max(1, int(e("BRIDGE_MAX_PARTS", "4")))      # max mesh messages per TG message
         self.tx_gap = float(e("MESH_TX_INTERVAL", "1.5"))             # s between two mesh transmissions
+        self.page_gap = float(e("BRIDGE_PAGE_GAP", "10"))             # s between the pages of an admin reply
         self.max_age = int(e("TG_MAX_AGE", "3600"))                    # older TG messages are not sent to mesh
         self.state_file = Path(e("BRIDGE_STATE", str(BASE / "state.json")))
         self.history_file = Path(e("BRIDGE_HISTORY_FILE", str(BASE / "history.json")))
@@ -621,6 +622,16 @@ def admin_repeat(text):
     return min(int(a), cfg.history_n) if a.isdigit() and int(a) > 0 else None
 
 
+def send_paced(pages, dest, ch):
+    """First page now, the others one every BRIDGE_PAGE_GAP seconds. Sent back to back, a DM page
+    that needs a retransmission (no ack) arrives after the next ones: [1/3], [3/3], [2/3]."""
+    mesh_send(pages[0], dest=dest, ch=ch)
+    if len(pages) > 1:
+        tm = threading.Timer(cfg.page_gap, lambda: jobs.put(lambda: send_paced(pages[1:], dest, ch)))
+        tm.daemon = True
+        tm.start()
+
+
 def admin_answer(uid, text, dest, ch, help_if_unknown):
     """Run an admin command and send the reply to the DM (dest) or to the admin channel.
     Replies are remembered per place, so 'repeat <n>' resends the last n messages sent there."""
@@ -628,17 +639,13 @@ def admin_answer(uid, text, dest, ch, help_if_unknown):
     n = admin_repeat(text)
     if n is not None:
         old = list(sent.get(key, ()))[-n:]
-        for p in old or [t("adm_repeat_none")]:
-            mesh_send(p, dest=dest, ch=ch)
-        return
+        return send_paced(old or [t("adm_repeat_none")], dest, ch)
     reply = handle_admin(uid, text) or (t("adm_help") if help_if_unknown else None)
     if not reply:                                               # unknown chatter gets no answer
         return
     pages = reply if isinstance(reply, list) else paginate(reply)
-    box = sent.setdefault(key, deque(maxlen=cfg.history_n))
-    for p in pages:
-        box.append(p)
-        mesh_send(p, dest=dest, ch=ch)
+    sent.setdefault(key, deque(maxlen=cfg.history_n)).extend(pages)
+    send_paced(pages, dest, ch)
 
 
 def handle_packet(pkt):

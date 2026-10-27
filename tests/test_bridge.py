@@ -3,6 +3,7 @@ node (tests/fakes/meshtastic) and a fake Telegram server.   Run: python -m unitt
 
 import os
 import sys
+import re
 import json
 import time
 import signal
@@ -167,7 +168,7 @@ class EndToEnd(unittest.TestCase):
                     "BRIDGE_LANG": lang, "MESH_PORT": "", "MESH_CHANNEL": "Group",
                     "TG_TOKEN": GOOD_TOKEN, "TG_CHAT_ID": str(CHAT_ID), "TG_API_BASE": self.tg.url,
                     "BRIDGE_ADMINS": "!44444444", "BRIDGE_PREFIX": "!", "MESH_TX_INTERVAL": "0.05",
-                    "BRIDGE_REPEAT_PAUSE": "0",
+                    "BRIDGE_REPEAT_PAUSE": "0", "BRIDGE_PAGE_GAP": "0.3",
                     "BRIDGE_STATE": str(self.tmp / "state.json"),
                     "BRIDGE_HISTORY_FILE": str(self.tmp / "history.json")})
         env.update(extra)
@@ -286,9 +287,12 @@ class EndToEnd(unittest.TestCase):
         self.wait(lambda: any(o["ch"] == 2 and o["text"].startswith("Repeat: no replies") for o in self.outbox()))
         self.mesh_rx("log", frm=ADMIN, ch=2)
         self.wait(lambda: any(o["ch"] == 2 and o["text"].startswith("Log, newest first:") for o in self.outbox()))
-        time.sleep(0.5)
+        last = lambda: [o["text"] for o in self.outbox() if o["ch"] == 2][-1]
+        self.wait(lambda: re.search(r"\[(\d+)/\1\]$", last()))       # wait for the last page
         logs = [o["text"] for o in self.outbox() if o["ch"] == 2 and o["text"] != "Repeat: no replies to repeat yet."]
         self.assertLessEqual(len(logs), 3)
+        if len(logs) > 1:                                # pages paced, so they leave in order
+            self.assertEqual([x.rsplit(" ", 1)[1] for x in logs], [f"[{i}/{len(logs)}]" for i in range(1, len(logs) + 1)])
         self.mesh_rx("ripeti 5", frm=ADMIN, ch=2)
         self.wait(lambda: [o["text"] for o in self.outbox() if o["ch"] == 2][-len(logs):] == logs
                   and sum(o["ch"] == 2 for o in self.outbox()) == 1 + 2 * len(logs))
